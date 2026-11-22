@@ -1,0 +1,54 @@
+name: build
+# Compiles the app for the simulator and for a device (unsigned). Runs on every push that
+# touches the app, and is the first job of testflight.yml.
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  compile:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the newest Xcode (new devices like the Duo only get native layout from the newest SDK)
+        run: |
+          NEWEST=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build -project Picklist.xcodeproj -scheme Picklist \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/sim.log" | grep -E "error|warning:|BUILD" || true
+          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/sim.log"
+      - name: Build for a device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Picklist.xcodeproj -scheme Picklist \
+            -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/device.log" | grep -E "error|warning:|BUILD" || true
+          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/device.log"
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: ${{ runner.temp }}/*.log
+          if-no-files-found: ignore

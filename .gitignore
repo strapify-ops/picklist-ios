@@ -1,0 +1,9 @@
+*.xcodeproj/
+App/Info.plist
+App/Picklist.entitlements
+build/
+DerivedData/
+.DS_Store
+*.p8
+*.p12
+*.mobileprovision
